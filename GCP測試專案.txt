@@ -1,0 +1,265 @@
+GCP建置專案大研究20260510::
+
+
+main.go
+  package main
+  import (
+      "fmt"
+      "net/http"
+  )
+  func handler(w http.ResponseWriter, r *http.Request) {
+      fmt.Fprintln(w, "hello world!")
+  }
+  func main() {
+      http.HandleFunc("/", handler)
+      http.ListenAndServe(":8080", nil)
+  }
+
+
+
+
+
+
+go mod init learngcp9527
+go mod tidy
+go run .
+  ⮕ http://localhost:8080
+
+
+
+
+
+Dockerfile
+  # ====== Build Backend ======
+  FROM golang:1.25-alpine AS backend-builder
+
+  WORKDIR /app/backend
+
+  COPY backend/go.mod ./
+  RUN go mod download
+
+  COPY backend .
+  RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o app
+
+
+  # ====== Final Image ======
+  FROM alpine:latest
+
+  WORKDIR /app
+
+  COPY --from=backend-builder /app/backend/app .
+  EXPOSE 8080
+  CMD ["./app"]
+
+
+
+
+
+
+
+docker build -t asia-east1-docker.pkg.dev/learngcp9527/my-repo/my-image:v1 .
+docker images
+docker run -d --rm -p 8080:8080 --name my-image asia-east1-docker.pkg.dev/learngcp9527/my-repo/my-image:v1
+  ⮕ http://localhost:8080
+  ⮕ docker stop my-image
+
+
+
+
+  =================================================================================================================
+  第一章: GCP Cloud Run
+
+    a. 專案前準備:
+      1. 知道google.cloud官網為: https://console.cloud.google.com/
+      2. 以下專案使用測試資訊為:
+        [專案名稱]:  learngcp9527
+        [地區]:  asia-east1
+        [Artifact Registry名]:  my-repo
+        [映像名]:  my-image:v1
+        [service名]:  my-service
+      3. 以上資訊解釋:
+        [專案名稱]:  GCP最上層容器名
+        [地區]:  資源所在資料中心
+        [Artifact Registry名]:  存放 Docker Image 的倉庫
+        [映像名]:  具體的 container 版本
+        [service名]:  對外公開的服務入口
+      4. 架構圖:
+        GCP Project (learngcp9527)
+        │
+        ├── Region (asia-east1)
+        │
+        ├── Artifact Registry
+        │     └── Repository (my-repo)
+        │           └── Image (my-image:v1)
+        │
+        └── Cloud Run
+              └── Service (my-service)
+                    └── Revision (自動產生)
+
+    b. 新增專案
+      [介面]:
+      1. 至網址  https://console.cloud.google.com/ 
+      2. ctrl + O → 新增專案 → 專案名稱: learngcp9527
+
+    c. 安裝 gcloud
+      [CLI]:
+      1. 安裝:   curl https://sdk.cloud.google.com | bash   (windows要再建安裝資料路徑環境變數，安裝完成後cli要重啟)
+      2. 初始:   gcloud init
+      3. 登入(選用):   gcloud auth login
+      4. 切換專案(選用):   gcloud config set project learngcp9527
+      5. 查看專案名:   gcloud config get-value project
+      5. 查看專案清單:   gcloud projects list
+
+    d. 啟用API服務
+      [CLI]:
+       (網頁版啟動 gcloud 為右上角 Cloud Shell 按鈕)
+      1. 啟動 Cloud Run Admin API:   gcloud services enable run.googleapis.com
+      2. 啟動 Cloud Build API:   gcloud services enable cloudbuild.googleapis.com
+      3. 啟動 Artifact Registry API:   gcloud services enable artifactregistry.googleapis.com
+      4. 啟動 Kubernetes Engine API:   gcloud services enable container.googleapis.com
+      5. 查看服務清單:   gcloud services list --enabled
+      [介面]:
+       (建議用CLI直接執行，不用從介面點選)
+      1. 左側選單 → API與服務 → 啟用API與服務
+      2. 依序搜尋並啟用: Cloud Run Admin API   Cloud Build API   Artifact Registry API   Kubernetes Engine API
+
+    e. 建立 Artifact Registry
+      [CLI]:
+      1. 建立倉庫my-repo
+        gcloud artifacts repositories create my-repo \
+          --repository-format=docker \
+          --location=asia-east1 \
+          --description="docker repository"
+      2. 設定 Docker 認證
+        gcloud auth configure-docker asia-east1-docker.pkg.dev
+         (此指令將自動修改設定  C:\Users\sdfsd\.docker\config.json  |  /home/sdfsd/.docker/config.json )
+         (上方.docker\config.json設定檔將增加 { "credHelpers": { "asia-east1-docker.pkg.dev": "gcloud" } )
+
+    f. 推送映像到 Artifact Registry
+     (GCP固定的Artifact Registry地址格式為:  [REGION]-docker.pkg.dev/[PROJECT_ID]/[REPOSITORY]/[IMAGE]:[TAG])
+     (預設PORT為8080)
+      [CLI]:
+      1. 本地映像建置:   docker build -t asia-east1-docker.pkg.dev/learngcp9527/my-repo/my-image:v1 .
+      2. 遠端映像推送:   docker push asia-east1-docker.pkg.dev/learngcp9527/my-repo/my-image:v1
+      3. 查看遠端映像:   gcloud artifacts repositories list
+      [介面]:
+      1. 從官網進入產品Artifact Registry ( 或網址 https://console.cloud.google.com/artifacts?project=learngcp9527 )
+      2. 查看到清單 my-repo/my-image
+
+    g. 手動 Deploy 到 Cloud Run 服務
+      [CLI]:
+      1. 啟動服務並取得網址(重啟服務就是重複執行它一次):
+        gcloud run deploy my-service \
+          --image asia-east1-docker.pkg.dev/learngcp9527/my-repo/my-image:v1 \
+          --region asia-east1 \
+          --platform managed \
+          --allow-unauthenticated
+      2. 查看LOG:   gcloud run services logs read my-service --region asia-east1
+      3. 查看服務網址:   gcloud run services list --region asia-east1
+      4. 查看服務細節:   gcloud run services describe my-service --region asia-east1
+      5. 查看服務修訂:   gcloud run revisions list --region asia-east1
+      6. 刪除服務:   gcloud run services delete my-service --region asia-east1
+      7. 更新服務:
+        gcloud run services update my-service \
+          --min-instances 0 \
+          --max-instances 3 \
+          --region asia-east1
+      [介面]:
+      1. Cloud Run > 資源列表找到 my-service
+      2. 列表上方有刪除選項；進入服務內部可監控及更新
+
+    h. 後續談
+      1. 啟動的服務對外網址，理論上將永久存活
+      2. min-instances 與 max-instances 將會由 GOOGLE 自動拓展，每個instances允許同時80個請求
+      3. 當 min-instances 設定為 0 時則無訪問時完全不啟動容器，流量費用幾乎為零
+
+
+  =================================================================================================================
+  第二章: GCP gke Deploy
+
+    b. 安裝 GKE
+      [指令]:
+      gcloud components update
+      gcloud components install gke-gcloud-auth-plugin
+
+
+    c. 建立 GKE cluster
+      [指令]:
+      1. 建立叢集
+        gcloud container clusters create go-hello-cluster \
+          --zone asia-east1-b \
+          --num-nodes 1
+      2. 連線到叢集
+        gcloud container clusters get-credentials go-hello-cluster \
+          --zone asia-east1-b
+      3. 其他語法
+        gcloud compute zones list   #zones清單
+        kubectl config get-contexts   #當前叢集
+        kubectl config use-context go-hello-cluster   #選擇叢集
+        gcloud container clusters delete go-hello-cluster --zone asia-east1-b   #刪除叢集
+
+
+
+
+k8s/app.yaml
+
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: go-hello
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: go-hello
+    template:
+      metadata:
+        labels:
+          app: go-hello
+      spec:
+        containers:
+          - name: go-hello
+            image: asia-east1-docker.pkg.dev/learngcp9527/my-repo/my-image:v1
+            ports:
+              - containerPort: 8080
+
+  ---
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: go-hello
+  spec:
+    selector:
+      app: go-hello
+    ports:
+      - port: 80
+        targetPort: 8080
+    type: LoadBalancer
+
+
+
+
+  =================================================================================================================
+  第章: Github trigger
+
+      b. 新建置github並推送專案
+      _a. 新建repository
+        1. github官網 https://github.com/
+        2. 找到左側按鈕 Create a new repository
+        3. 輸入 learngcp9527 並創造
+      _b. 初始化git推送權限
+        2. 初始化 (新版本git與github 將建議並預設使用main為主分支，也可以至github網站調整設定回舊版master)
+          git init
+          git branch -M main
+        3-1. 使用https認證權限(不建議)
+          git remote add origin https://github.com/sdfsds5271463/learngcp9527.git
+        3-2. 使用ssh認證權限
+          輸入以下指令 (後連點enter留空路徑與密碼) 產生家目錄密鑰 (ed25519已經取代舊版的rsa)
+          ssh-keygen -t ed25519
+          網站github右上角頭像 > settings > SSH and GPG keys > new SSH Key > 貼上家目錄的/.ssh/id_ed25519.pub內容
+          git remote add origin git@github.com:sdfsds5271463/learngcp9527.git
+      _c. 新增專案檔案並推送
+        git add .
+        git commit -m "first init"
+        git push --set-upstream origin main
+        git push
