@@ -1,35 +1,32 @@
 steps:
+  #注意下面 v1 可以替換為 $COMMIT_SHA
   # 1️⃣ Build Docker image
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
+      - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:v1'
       - '.'
 
   # 2️⃣ Push image
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
+      - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:v1'
 
-  # 3️⃣ Deploy to Cloud Run
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: gcloud
+  # 3️⃣ Deploy to GKE
+  - name: 'gcr.io/cloud-builders/gke-deploy'
     args:
-      - 'run'
-      - 'deploy'
-      - 'my-service'
-      - '--image'
-      - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
-      - '--region'
-      - 'asia-east1'
-      - '--platform'
-      - 'managed'
-      - '--allow-unauthenticated'
+      - run
+      - --filename=k8s/app.yaml
+      - --location=asia-east1-b
+      - --cluster=go-hello-cluster
+      - --image=asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:v1
+      - --output=output-server
+
 
 images:
-  - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
+  - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:v1'
 
 options:
   logging: CLOUD_LOGGING_ONLY
