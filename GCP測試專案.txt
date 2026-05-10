@@ -1,73 +1,67 @@
 GCP建置專案大研究20260510::
 
+以最小單位建置一個網站，推上GCP，再研究所有GCP功能
 
-main.go
-  package main
-  import (
-      "fmt"
-      "net/http"
-  )
-  func handler(w http.ResponseWriter, r *http.Request) {
-      fmt.Fprintln(w, "hello world!")
-  }
-  func main() {
-      http.HandleFunc("/", handler)
-      http.ListenAndServe(":8080", nil)
-  }
+  =================================================================================================================
+  第一章: docker run
 
-
-
-
-
-
-go mod init learngcp9527
-go mod tidy
-go run .
-  ⮕ http://localhost:8080
+    a. 本地server測試運行
+      📂main.go
+        package main
+        import (
+            "fmt"
+            "net/http"
+        )
+        func handler(w http.ResponseWriter, r *http.Request) {
+            fmt.Fprintln(w, "hello world!")
+        }
+        func main() {
+            http.HandleFunc("/", handler)
+            http.ListenAndServe(":8080", nil)
+        }
 
 
+      ⌨️指令運行
+        go mod init learngcp9527
+        go mod tidy
+        go run .
+          ⮕ http://localhost:8080
 
 
+    b. docker run 運行
+      📂Dockerfile
+        # ====== Build Backend ======
+        FROM golang:1.25-alpine AS backend-builder
 
-Dockerfile
-  # ====== Build Backend ======
-  FROM golang:1.25-alpine AS backend-builder
+        WORKDIR /app/backend
 
-  WORKDIR /app/backend
+        COPY backend/go.mod ./
+        RUN go mod download
 
-  COPY backend/go.mod ./
-  RUN go mod download
-
-  COPY backend .
-  RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o app
-
-
-  # ====== Final Image ======
-  FROM alpine:latest
-
-  WORKDIR /app
-
-  COPY --from=backend-builder /app/backend/app .
-  EXPOSE 8080
-  CMD ["./app"]
+        COPY backend .
+        RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o app
 
 
+        # ====== Final Image ======
+        FROM alpine:latest
+
+        WORKDIR /app
+
+        COPY --from=backend-builder /app/backend/app .
+        EXPOSE 8080
+        CMD ["./app"]
 
 
-
-
-
-docker build -t asia-east1-docker.pkg.dev/learngcp9527/my-repo/my-image:v1 .
-docker images
-docker run -d --rm -p 8080:8080 --name my-image asia-east1-docker.pkg.dev/learngcp9527/my-repo/my-image:v1
-  ⮕ http://localhost:8080
-  ⮕ docker stop my-image
-
-
+      ⌨️指令運行
+        docker build -t asia-east1-docker.pkg.dev/learngcp9527/my-repo/my-image:v1 .
+        docker images
+        docker run -d --rm -p 8080:8080 --name my-image asia-east1-docker.pkg.dev/learngcp9527/my-repo/my-image:v1
+          ⮕ http://localhost:8080
+          ⮕ docker stop my-image
 
 
   =================================================================================================================
-  第一章: GCP Cloud Run
+  第二章: GCP Cloud Run
 
     a. 專案前準備:
       1. 知道google.cloud官網為: https://console.cloud.google.com/
@@ -77,24 +71,6 @@ docker run -d --rm -p 8080:8080 --name my-image asia-east1-docker.pkg.dev/learng
         [Artifact Registry名]:  my-repo
         [映像名]:  my-image:v1
         [service名]:  my-service
-      3. 以上資訊解釋:
-        [專案名稱]:  GCP最上層容器名
-        [地區]:  資源所在資料中心
-        [Artifact Registry名]:  存放 Docker Image 的倉庫
-        [映像名]:  具體的 container 版本
-        [service名]:  對外公開的服務入口
-      4. 架構圖:
-        GCP Project (learngcp9527)
-        │
-        ├── Region (asia-east1)
-        │
-        ├── Artifact Registry
-        │     └── Repository (my-repo)
-        │           └── Image (my-image:v1)
-        │
-        └── Cloud Run
-              └── Service (my-service)
-                    └── Revision (自動產生)
 
     b. 新增專案
       [介面]:
@@ -175,15 +151,15 @@ docker run -d --rm -p 8080:8080 --name my-image asia-east1-docker.pkg.dev/learng
 
 
   =================================================================================================================
-  第二章: GCP gke Deploy
+  第三章: GCP gke Deploy
 
-    b. 安裝 GKE
+    a. 安裝 GKE
       [指令]:
       gcloud components update
       gcloud components install gke-gcloud-auth-plugin
 
 
-    c. 建立 GKE cluster
+    b. 建立 GKE cluster
       [指令]:
       1. 建立叢集
         gcloud container clusters create go-hello-cluster \
@@ -199,130 +175,115 @@ docker run -d --rm -p 8080:8080 --name my-image asia-east1-docker.pkg.dev/learng
         gcloud container clusters delete go-hello-cluster --zone asia-east1-b   #刪除叢集
 
 
+    c. 建立運行 yaml
+      📂k8s/app.yaml
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: go-hello
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: go-hello
+          template:
+            metadata:
+              labels:
+                app: go-hello
+            spec:
+              containers:
+                - name: go-hello
+                  image: asia-east1-docker.pkg.dev/learngcp9527/my-repo/my-image:v1
+                  ports:
+                    - containerPort: 8080
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: go-hello
+        spec:
+          selector:
+            app: go-hello
+          ports:
+            - port: 80
+              targetPort: 8080
+          type: LoadBalancer
 
 
-k8s/app.yaml
-
-  apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    name: go-hello
-  spec:
-    replicas: 1
-    selector:
-      matchLabels:
-        app: go-hello
-    template:
-      metadata:
-        labels:
-          app: go-hello
-      spec:
-        containers:
-          - name: go-hello
-            image: asia-east1-docker.pkg.dev/learngcp9527/my-repo/my-image:v1
-            ports:
-              - containerPort: 8080
-
-  ---
-  apiVersion: v1
-  kind: Service
-  metadata:
-    name: go-hello
-  spec:
-    selector:
-      app: go-hello
-    ports:
-      - port: 80
-        targetPort: 8080
-    type: LoadBalancer
-
-
-
-
-kubectl apply -f k8s/
-kubectl get svc
-  ⮕ EXTERNAL-IP 可瀏覽網站
-
-
-
+      ⌨️指令運行
+        kubectl apply -f k8s/
+        kubectl get svc
+          ⮕ EXTERNAL-IP 可瀏覽網站
 
 
   =================================================================================================================
-  第章: Github trigger
+  第四章: Github trigger
 
-      b. 新建置github並推送專案
-      _a. 新建repository
+    a. 新建置github並推送專案
+      一. 新建repository
         1. github官網 https://github.com/
         2. 找到左側按鈕 Create a new repository
         3. 輸入 learngcp9527 並創造
-      _b. 初始化git推送權限
-        2. 初始化 (新版本git與github 將建議並預設使用main為主分支，也可以至github網站調整設定回舊版master)
+      二. 初始化git推送權限
+        1. 初始化 (新版本git與github 將建議並預設使用main為主分支，也可以至github網站調整設定回舊版master)
           git init
           git branch -M main
-        3-1. 使用https認證權限(不建議)
+        2-1. 使用https認證權限(不建議)
           git remote add origin https://github.com/sdfsds5271463/learngcp9527.git
-        3-2. 使用ssh認證權限
+        2-2. 使用ssh認證權限
           輸入以下指令 (後連點enter留空路徑與密碼) 產生家目錄密鑰 (ed25519已經取代舊版的rsa)
           ssh-keygen -t ed25519
           網站github右上角頭像 > settings > SSH and GPG keys > new SSH Key > 貼上家目錄的/.ssh/id_ed25519.pub內容
           git remote add origin git@github.com:sdfsds5271463/learngcp9527.git
-      _c. 新增專案檔案並推送
+      三. 新增專案檔案並推送
         git add .
         git commit -m "first init"
         git push --set-upstream origin main
         git push
 
 
+    b. 雲端編譯 yaml
+      📂cloudbuild.yaml
+        steps:
+          #注意下面 v1 可以替換為 $COMMIT_SHA
+          # 1️⃣ Build Docker image
+          - name: 'gcr.io/cloud-builders/docker'
+            args:
+              - 'build'
+              - '-t'
+              - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:v1'
+              - '.'
+
+          # 2️⃣ Push image
+          - name: 'gcr.io/cloud-builders/docker'
+            args:
+              - 'push'
+              - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:v1'
+
+          # 3️⃣ Deploy to GKE
+          - name: 'gcr.io/cloud-builders/gke-deploy'
+            args:
+              - run
+              - --filename=k8s/app.yaml
+              - --location=asia-east1-b
+              - --cluster=go-hello-cluster
+              - --image=asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:v1
+              - --output=output-server
+
+        images:
+          - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:v1'
+
+        options:
+          logging: CLOUD_LOGGING_ONLY
 
 
-
-
-cloudbuild.yaml
-      steps:
-        # 1️⃣ Build Docker image
-        - name: 'gcr.io/cloud-builders/docker'
-          args:
-            - 'build'
-            - '-t'
-            - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
-            - '.'
-
-        # 2️⃣ Push image
-        - name: 'gcr.io/cloud-builders/docker'
-          args:
-            - 'push'
-            - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
-
-        # 3️⃣ Deploy to Cloud Run
-        - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-          entrypoint: gcloud
-          args:
-            - 'run'
-            - 'deploy'
-            - 'my-service'
-            - '--image'
-            - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
-            - '--region'
-            - 'asia-east1'
-            - '--platform'
-            - 'managed'
-            - '--allow-unauthenticated'
-
-      images:
-        - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
-
-      options:
-        logging: CLOUD_LOGGING_ONLY
-
-
-
-
-    d. 設定 Cloud Build 觸發條件
+    c. 設定 Cloud Build 觸發條件
       1. 服務 Cloud Build 頁面 > 觸發條件 > 新建觸發條件
       2. 需要填寫的部分(沒提到的留預設):
         名稱 > 記得填寫
         存放區 > 連結新的存放區 > 連線 GitHub(將自動安裝必要套件) > 選擇GitHub正確的存放區
         服務帳戶 > 選擇最高權限帳戶就好
 
-    e. 觀察推送
+
+    d. 觀察推送
       git push 後 > 服務 Cloud Build 頁面 > 紀錄
