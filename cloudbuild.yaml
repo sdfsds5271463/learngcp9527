@@ -29,7 +29,7 @@ steps:
       - '--allow-unauthenticated'
 
 images:
-- 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
+  - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
 
 options:
-logging: CLOUD_LOGGING_ONLY
+  logging: CLOUD_LOGGING_ONLY
