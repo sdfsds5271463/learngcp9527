@@ -194,8 +194,8 @@ docker run -d --rm -p 8080:8080 --name my-image asia-east1-docker.pkg.dev/learng
           --zone asia-east1-b
       3. 其他語法
         gcloud compute zones list   #zones清單
-        kubectl config get-contexts   #當前叢集
-        kubectl config use-context go-hello-cluster   #選擇叢集
+        kubectl config get-contexts   #叢集清單
+        kubectl config use-context gke_learngcp9527_asia-east1-b_go-hello-cluster   #選擇叢集
         gcloud container clusters delete go-hello-cluster --zone asia-east1-b   #刪除叢集
 
 
@@ -239,6 +239,14 @@ k8s/app.yaml
 
 
 
+kubectl apply -f k8s/
+kubectl get svc
+  ⮕ EXTERNAL-IP 可瀏覽網站
+
+
+
+
+
   =================================================================================================================
   第章: Github trigger
 
@@ -263,3 +271,58 @@ k8s/app.yaml
         git commit -m "first init"
         git push --set-upstream origin main
         git push
+
+
+
+
+
+
+cloudbuild.yaml
+      steps:
+        # 1️⃣ Build Docker image
+        - name: 'gcr.io/cloud-builders/docker'
+          args:
+            - 'build'
+            - '-t'
+            - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
+            - '.'
+
+        # 2️⃣ Push image
+        - name: 'gcr.io/cloud-builders/docker'
+          args:
+            - 'push'
+            - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
+
+        # 3️⃣ Deploy to Cloud Run
+        - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+          entrypoint: gcloud
+          args:
+            - 'run'
+            - 'deploy'
+            - 'my-service'
+            - '--image'
+            - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
+            - '--region'
+            - 'asia-east1'
+            - '--platform'
+            - 'managed'
+            - '--allow-unauthenticated'
+
+      images:
+        - 'asia-east1-docker.pkg.dev/$PROJECT_ID/my-repo/my-image:$COMMIT_SHA'
+
+      options:
+        logging: CLOUD_LOGGING_ONLY
+
+
+
+
+    d. 設定 Cloud Build 觸發條件
+      1. 服務 Cloud Build 頁面 > 觸發條件 > 新建觸發條件
+      2. 需要填寫的部分(沒提到的留預設):
+        名稱 > 記得填寫
+        存放區 > 連結新的存放區 > 連線 GitHub(將自動安裝必要套件) > 選擇GitHub正確的存放區
+        服務帳戶 > 選擇最高權限帳戶就好
+
+    e. 觀察推送
+      git push 後 > 服務 Cloud Build 頁面 > 紀錄
